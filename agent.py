@@ -10,6 +10,7 @@ import torch.optim as optim
 from model import Actor, Critic
 from agent_utils.ounoise import OUNoise
 from agent_utils.replaybuffer import ReplayBuffer
+from agent_utils.prioritizedreplaybuffer import PrioritizedReplayBuffer
 
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -24,12 +25,15 @@ class Agent():
      buffer_size = int(2**22),
      batch_size = 128,
      gamma = 0.99,
-     tau = 1e-3,
+     tau = 1e-2,
      lr_actor = 1e-3,
      lr_critic = 1e-3,
-     learning_passes = 5,           # number of learning passes
-     noise_decay = 0.99,
-     update_every = 2**3,
+     learning_passes = 16,           # number of learning passes
+     starting_noise_factor = 1,
+     noise_decay = 0.995,
+     update_every = 2**4,
+     use_prioritized_replay = False,
+     alpha=0.6, beta=0.4, beta_scheduler=1., #priority replay
      ):
         """ DDPG agent
         This class instantiates a DDPG agent with TODO
@@ -62,9 +66,13 @@ class Agent():
         self.lr_actor = lr_actor
         self.lr_critic = lr_critic
         self.learning_passes = learning_passes
-        self.noise_factor = 1
+        self.noise_factor = starting_noise_factor
         self.noise_decay = noise_decay
         self.update_every = update_every
+        self.use_prioritized_replay = use_prioritized_replay
+        self.alpha=alpha
+        self.beta=beta
+        self.beta_scheduler=beta_scheduler
         self.last_episode_train = 0
 
 
@@ -91,7 +99,11 @@ class Agent():
         self.soft_update(self.critic_local, self.critic_target, 1)
 
         # Replay Buffer
-        self.replay_buffer = ReplayBuffer(action_size, seed, buffer_size=buffer_size, batch_size=batch_size)
+        if self.use_prioritized_replay: # not correctly implemented yet
+            self.replay_buffer = PrioritizedReplayBuffer(action_size, seed, buffer_size, batch_size, device, 
+                                                    alpha=self.alpha, beta=self.beta, beta_scheduler=self.beta_scheduler)
+        else:
+            self.replay_buffer = ReplayBuffer(action_size, seed, buffer_size, batch_size)
 
         # Noise process
         self.noise = OUNoise(action_size, seed)
@@ -108,7 +120,11 @@ class Agent():
         #print(f"pre noise action {action}")
         if noise:
             # Add noise to the action in order to explore the environment
-            action += self.noise_factor * self.noise.sample()
+            val = self.noise_factor * self.noise.sample()
+            #print(f"added noise: {val}")
+            #print(f"selected action: {action}")
+            #print(f"noise_factor: {self.noise_factor}")
+            action += val
 
         #print(f"post noise action {action}")
 
@@ -143,22 +159,28 @@ class Agent():
         ======
             experiences (Tuple[torch.Tensor]): tuple of (s, a, r, s') tuples 
         """
-        states, actions, rewards, next_states, dones = experiences
-        
+        if self.use_prioritized_replay: # Not correctly implemented yet
+            states, actions, rewards, next_states, dones, weights = experiences
+        else:
+            states, actions, rewards, next_states, dones = experiences
+            weights = torch.ones_like(dones)
+
         # ---------------------------- update critic ---------------------------- #
-        # Get predicted next-state actions from actor_target model
-        actions_next = self.actor_target(next_states)
-        # Get predicted next-state Q-Values from critic_target model
-        Q_targets_next = self.critic_target(next_states, actions_next)
+        with torch.no_grad():
+            # Get predicted next-state actions from actor_target model
+            actions_next = self.actor_target(next_states)
+            # Get predicted next-state Q-Values from critic_target model
+            Q_targets_next = self.critic_target(next_states, actions_next)
         # Compute Q targets for current states (y_i)
         Q_targets = rewards + (self.gamma * Q_targets_next * (1 - dones))
+        Q_targets = torch.mul(Q_targets, weights)
         # Compute critic loss
         Q_expected = self.critic_local(states, actions)
         critic_loss = F.mse_loss(Q_expected, Q_targets)
         # Minimize the loss
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
-        # torch.nn.utils.clip_grad_norm_(self.critic_local.parameters(), 1) TODO
+        #torch.nn.utils.clip_grad_norm_(self.critic_local.parameters(), 0.5) #TODO
         self.critic_optimizer.step()
         
         # ---------------------------- update actor ---------------------------- #
@@ -171,8 +193,8 @@ class Agent():
         self.actor_optimizer.step()
         
         # ----------------------- update target networks ----------------------- #
-        self.soft_update(self.critic_local, self.critic_target)
-        self.soft_update(self.actor_local, self.actor_target)
+        self.soft_update(self.critic_local, self.critic_target, tau=self.tau)
+        self.soft_update(self.actor_local, self.actor_target, tau=self.tau)
         
     def soft_update(self, local_model, target_model, tau=1e-3):
         """ Soft update model parameters.

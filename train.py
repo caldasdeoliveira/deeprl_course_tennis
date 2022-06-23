@@ -1,9 +1,13 @@
 from agent import Agent
 
+# +
 from unityagents import UnityEnvironment
 import numpy as np
 
-env = UnityEnvironment(file_name="Tennis.app")
+import torch
+# -
+
+env = UnityEnvironment(file_name="Tennis", no_graphics=False)
 
 # get the default brain
 brain_name = env.brain_names[0]
@@ -24,28 +28,9 @@ action_size = brain.vector_action_space_size
 # examine the state space 
 states = env_info.vector_observations
 state_size = states.shape[1]
-
-# + active=""
-# for i in range(1, 6):                                      # play game for 5 episodes
-#     env_info = env.reset(train_mode=False)[brain_name]     # reset the environment    
-#     states = env_info.vector_observations                  # get the current state (for each agent)
-#     scores = np.zeros(num_agents)                          # initialize the score (for each agent)
-#     while True:
-#         actions = np.random.randn(num_agents, action_size) # select an action (for each agent)
-#         actions = np.clip(actions, -1, 1)                  # all actions between -1 and 1
-#         print(actions)
-#         env_info = env.step(actions)[brain_name]           # send all actions to tne environment
-#         next_states = env_info.vector_observations         # get next state (for each agent)
-#         rewards = env_info.rewards                         # get reward (for each agent)
-#         dones = env_info.local_done                        # see if episode finished
-#         scores += env_info.rewards                         # update the score (for each agent)
-#         states = next_states                               # roll over states to next time step
-#         if np.any(dones):                                  # exit loop if episode finished
-#             break
-#     print('Score (max over agents) from episode {}: {}'.format(i, np.max(scores)))
 # -
 
-agent = Agent(state_size, action_size, seed)
+agent = Agent(state_size, action_size, seed, use_prioritized_replay=False)
 
 # +
 from collections import namedtuple, deque
@@ -55,8 +40,9 @@ def ma_ddpg(n_episodes=2000, num_agents=2, window_len=100, goal = 0.5, print_eve
     original_goal = goal
     scores_deque = deque(maxlen=window_len)
     scores = []
+    avg_scores = []
     for i_episode in range(1, n_episodes+1):
-        if i_episode % 1 ==0:
+        if i_episode % 1000 ==0:
             env_info = env.reset(train_mode=False)[brain_name]     # reset the environment    
         else:
             env_info = env.reset(train_mode=True)[brain_name]     # reset the environment    
@@ -66,12 +52,11 @@ def ma_ddpg(n_episodes=2000, num_agents=2, window_len=100, goal = 0.5, print_eve
         while True:
             
             actions = [agent.act(state.reshape([1,state.shape[0]])) for state in states]
-            #print(actions)
             
             env_info = env.step(actions,)[brain_name]
             next_states = env_info.vector_observations         # get next state (for each agent)
             rewards = env_info.rewards                         # get reward (for each agent)
-            dones = env_info.local_done                        # see if episode finished
+            dones = env_info.local_done                        # see if episode finished 
             
             for state, action, reward, next_state, done in zip(states, actions, rewards, next_states, dones):
                 agent.step(state, action, reward, next_state, done, i_episode,)
@@ -79,8 +64,9 @@ def ma_ddpg(n_episodes=2000, num_agents=2, window_len=100, goal = 0.5, print_eve
             score += rewards                         # update the score (for each agent)
             if np.any(dones):                                  # exit loop if episode finished
                 break
-        scores_deque.append(score)
-        scores.append(score)
+        scores_deque.append(np.max(score))
+        scores.append(np.max(score))
+        avg_scores.append(np.mean(scores_deque))
         if np.mean(scores_deque) >= goal and len(scores_deque) == window_len:
             if goal == original_goal:
                 print(
@@ -91,22 +77,26 @@ def ma_ddpg(n_episodes=2000, num_agents=2, window_len=100, goal = 0.5, print_eve
                 print(f"\nSaving better agent with Average Score: {np.mean(scores_deque):.3f}")
             torch.save(agent.actor_local.state_dict(), 'checkpoint_actor.pth')
             torch.save(agent.critic_local.state_dict(), 'checkpoint_critic.pth')
-            goal = int(np.mean(scores_deque)) + 0.1
+            goal = round(np.mean(scores_deque),1) + 0.1
         if i_episode % print_every == 0:
             print('\rEpisode {}\tAverage Score: {:.3f}'.format(i_episode, np.mean(scores_deque)))
             
-    return scores
+    return scores, avg_scores
 
 
 # -
 
-scores = ma_ddpg(n_episodes=5000)
+scores,avg_scores = ma_ddpg(n_episodes=32000)
 
 # +
 import pickle
 
 with open('scores.pkl', 'ab') as f:
     pickle.dump(scores,f)
+# -
+
+with open('avg_scores.pkl', 'ab') as f:
+    pickle.dump(avg_scores,f)
 
 # +
 import matplotlib.pyplot as plt
@@ -115,7 +105,8 @@ import matplotlib.pyplot as plt
 # plot the scores
 fig = plt.figure()
 ax = fig.add_subplot(111)
-plt.plot(np.arange(len(scores)), np.mean(scores, axis=1))
+plt.plot(np.arange(len(scores)), scores, 'b')
+plt.plot(np.arange(len(scores)),avg_scores, 'r')
 plt.ylabel('Score')
 plt.xlabel('Episode #')
 plt.show()
@@ -123,3 +114,5 @@ plt.show()
 # -
 
 env.close()
+
+

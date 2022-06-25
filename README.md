@@ -1,11 +1,15 @@
 # Udacity Deep Reinforcement Learning course - Project 3: Tennis
 
-![]()
+![](point.gif)
 
-This repository contains my solution for the third project of Udacity's course on Reinforcement Learning. The scenario's goal is to !!!TODO!!!!
+This repository contains my solution for the third project of Udacity's course on deep Reinforcement Learning. The scenario's goal is to control two rackets and bounce a ball over a net keeping the ball in play for as long as possible.
 ## Contents
 This repo contains:
-!!!TODO!!!!
+* `setup.sh` - Bash script to setup the environment
+* `train.py` - Script to train the agent. I used jupytext to run it as jupyter notebook
+* `agent.py` - Implementation of the learning algorithm
+* `agent_utils` - Folder containing several code files that are used by the agent class (e.g. replaybuffer)
+* `report.ipynb` - Final report of the project
 
 ## Getting Started
 

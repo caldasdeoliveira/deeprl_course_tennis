@@ -36,7 +36,7 @@ class Agent():
      alpha=0.6, beta=0.4, beta_scheduler=1., #priority replay
      ):
         """ DDPG agent
-        This class instantiates a DDPG agent with TODO
+        This class instantiates a DDPG agent.
         Args:
             state_size (int): shape of the state encoding.
             action_size (int): number of actions in the environment.
@@ -50,7 +50,9 @@ class Agent():
                          of the target network. Between 0 and 1.
             lr_actor (float): learning rate for the actor network. Between 0 and 1.
             lr_critic (float): learning rate for the critic network. Between 0 and 1.
-            noise_decay (int): TODO
+            starting_noise_factor (float): Initial noise factor.
+            noise_decay (float): Value by which the noise factor will be multiplied every
+                                 time the agent learns. Reduces Noise with time.
             update_every (int): number of episodes after which the agent target network weights 
                                 are updated.
         """

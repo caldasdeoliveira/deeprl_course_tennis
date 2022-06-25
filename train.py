@@ -7,7 +7,7 @@ import numpy as np
 import torch
 # -
 
-env = UnityEnvironment(file_name="Tennis", no_graphics=False)
+env = UnityEnvironment(file_name="Tennis.app", no_graphics=True)
 
 # get the default brain
 brain_name = env.brain_names[0]
@@ -92,8 +92,7 @@ scores,avg_scores = ma_ddpg(n_episodes=32000)
 import pickle
 
 with open('scores.pkl', 'ab') as f:
-    pickle.dump(scores,f)
-# -
+    pickle.dump(scores,f) 
 
 with open('avg_scores.pkl', 'ab') as f:
     pickle.dump(avg_scores,f)
